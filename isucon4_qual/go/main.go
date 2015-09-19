@@ -2,6 +2,7 @@ package main
 
 import (
 	"database/sql"
+	_ "encoding/json"
 	"fmt"
 	"github.com/draftcode/isucon_misc/grizzly"
 	"github.com/go-martini/martini"
@@ -48,8 +49,9 @@ func init() {
 }
 
 func main() {
-	m := martini.Classic()
+	h := grizzly.KeyedHistogram("isucon")
 
+	m := martini.Classic()
 	store := sessions.NewCookieStore([]byte("secret-isucon"))
 	m.Use(sessions.Sessions("isucon_go_session", store))
 
@@ -59,13 +61,13 @@ func main() {
 	}))
 
 	m.Get("/", func(r render.Render, session sessions.Session) {
-		h := grizzly.Histogram("index")
-		s := grizzly.Stopwatch(h)
+		s := grizzly.KeyedStopwatch(h, "index")
 		r.HTML(200, "index", map[string]string{"Flash": getFlash(session, "notice")})
 		s.Close()
 	})
 
 	m.Post("/login", func(req *http.Request, r render.Render, session sessions.Session) {
+		s := grizzly.KeyedStopwatch(h, "login")
 		user, err := attemptLogin(req)
 
 		notice := ""
@@ -86,9 +88,11 @@ func main() {
 
 		session.Set("user_id", strconv.Itoa(user.ID))
 		r.Redirect("/mypage")
+		s.Close()
 	})
 
 	m.Get("/mypage", func(r render.Render, session sessions.Session) {
+		s := grizzly.KeyedStopwatch(h, "mypage")
 		currentUser := getCurrentUser(session.Get("user_id"))
 
 		if currentUser == nil {
@@ -99,14 +103,19 @@ func main() {
 
 		currentUser.getLastLogin()
 		r.HTML(200, "mypage", currentUser)
+		s.Close()
 	})
 
 	m.Get("/report", func(r render.Render) {
+		s := grizzly.KeyedStopwatch(h, "report")
 		r.JSON(200, map[string][]string{
 			"banned_ips":   bannedIPs(),
 			"locked_users": lockedUsers(),
 		})
+		s.Close()
 	})
 
-	log.Fatal(http.ListenAndServe(":8080", m))
+	http.Handle("/", m)
+
+	log.Fatal(http.ListenAndServe(":8080", nil))
 }
