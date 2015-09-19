@@ -17,6 +17,8 @@ def push():
     sudo('supervisorctl stop isucon_go')
     put('go/golang-webapp', 'webapp/go/golang-webapp')
     put('go/templates', 'webapp/go/templates')
+    put('sql/schema.sql', 'sql/schema.sql')
+    put('init.sh', 'init.sh')
 
     run('chmod 755 webapp/go/golang-webapp')
     sudo('supervisorctl start isucon_go')
