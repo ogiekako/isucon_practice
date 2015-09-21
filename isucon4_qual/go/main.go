@@ -49,7 +49,7 @@ func init() {
 }
 
 func main() {
-	h := grizzly.KeyedHistogram("isucon")
+	h := grizzly.KeyedHistogram("http/")
 
 	m := martini.Classic()
 	store := sessions.NewCookieStore([]byte("secret-isucon"))
@@ -61,13 +61,13 @@ func main() {
 	}))
 
 	m.Get("/", func(r render.Render, session sessions.Session) {
-		s := grizzly.KeyedStopwatch(h, "index")
+		s := grizzly.KeyedStopwatch(h, "/")
 		r.HTML(200, "index", map[string]string{"Flash": getFlash(session, "notice")})
 		s.Close()
 	})
 
 	m.Post("/login", func(req *http.Request, r render.Render, session sessions.Session) {
-		s := grizzly.KeyedStopwatch(h, "login")
+		s := grizzly.KeyedStopwatch(h, "/login")
 		user, err := attemptLogin(req)
 
 		notice := ""
@@ -92,7 +92,7 @@ func main() {
 	})
 
 	m.Get("/mypage", func(r render.Render, session sessions.Session) {
-		s := grizzly.KeyedStopwatch(h, "mypage")
+		s := grizzly.KeyedStopwatch(h, "/mypage")
 		currentUser := getCurrentUser(session.Get("user_id"))
 
 		if currentUser == nil {
@@ -107,10 +107,12 @@ func main() {
 	})
 
 	m.Get("/report", func(r render.Render) {
-		s := grizzly.KeyedStopwatch(h, "report")
+		s := grizzly.KeyedStopwatch(h, "/report")
+		ips := bannedIPs()
+		users := lockedUsers()
 		r.JSON(200, map[string][]string{
-			"banned_ips":   bannedIPs(),
-			"locked_users": lockedUsers(),
+			"banned_ips":   ips,
+			"locked_users": users,
 		})
 		s.Close()
 	})
