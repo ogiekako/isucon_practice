@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/draftcode/isucon_misc/grizzly"
 	"github.com/garyburd/redigo/redis"
 )
 
@@ -67,28 +68,6 @@ func CreateRedisLoginLog(succeeded bool, remoteAddr, login string) {
 	}
 }
 
-func createLoginLog(succeeded bool, remoteAddr, login string, user *User) error {
-	CreateRedisLoginLog(succeeded, remoteAddr, login)
-	succ := 0
-	if succeeded {
-		succ = 1
-	}
-
-	var userId sql.NullInt64
-	if user != nil {
-		userId.Int64 = int64(user.ID)
-		userId.Valid = true
-	}
-
-	_, err := DB.Exec(
-		"INSERT INTO login_log (`created_at`, `user_id`, `login`, `ip`, `succeeded`) "+
-			"VALUES (?,?,?,?,?)",
-		time.Now(), userId, login, remoteAddr, succ,
-	)
-
-	return err
-}
-
 func isLockedUser(user *User) bool {
 	if user == nil {
 		return false
@@ -133,6 +112,8 @@ func UpdateLastLogin(ip, login string, createdAt time.Time) {
 	}
 }
 
+var hDB = grizzly.KeyedHistogram("/login")
+
 func attemptLogin(req *http.Request) (*User, error) {
 	succeeded := false
 	user := &User{}
@@ -146,17 +127,21 @@ func attemptLogin(req *http.Request) (*User, error) {
 	}
 
 	defer func() {
-		createLoginLog(succeeded, remoteAddr, loginName, user)
+		s := grizzly.KeyedStopwatch(hDB, "/login:createLog")
+		defer s.Close()
+		CreateRedisLoginLog(succeeded, remoteAddr, loginName)
 		if succeeded {
 			UpdateLastLogin(remoteAddr, loginName, time.Now())
 		}
 	}()
 
+	s := grizzly.KeyedStopwatch(hDB, "/login:scanUser")
 	row := DB.QueryRow(
 		"SELECT id, login, password_hash, salt FROM users WHERE login = ?",
 		loginName,
 	)
 	err := row.Scan(&user.ID, &user.Login, &user.PasswordHash, &user.Salt)
+	s.Close()
 
 	switch {
 	case err == sql.ErrNoRows:
@@ -165,6 +150,8 @@ func attemptLogin(req *http.Request) (*User, error) {
 		return nil, err
 	}
 
+	s = grizzly.KeyedStopwatch(hDB, "/login:errorCheck")
+	defer s.Close()
 	if banned := isBannedIP(remoteAddr); banned {
 		return nil, ErrBannedIP
 	}
@@ -185,11 +172,11 @@ func attemptLogin(req *http.Request) (*User, error) {
 	return user, nil
 }
 
-func getCurrentUser(userId interface{}) *User {
+func getCurrentUser(login interface{}) *User {
 	user := &User{}
 	row := DB.QueryRow(
-		"SELECT id, login, password_hash, salt FROM users WHERE id = ?",
-		userId,
+		"SELECT id, login, password_hash, salt FROM users WHERE login = ?",
+		login,
 	)
 	err := row.Scan(&user.ID, &user.Login, &user.PasswordHash, &user.Salt)
 
