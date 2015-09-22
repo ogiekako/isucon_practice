@@ -1,7 +1,12 @@
-package main
+package server
 
 import (
+	"bytes"
+	"encoding/gob"
+	"log"
 	"time"
+
+	"github.com/garyburd/redigo/redis"
 )
 
 type User struct {
@@ -20,7 +25,22 @@ type LastLogin struct {
 }
 
 func (u *User) getLastLogin() *LastLogin {
-	rows, err := db.Query(
+	conn := pool.Get()
+	defer conn.Close()
+
+	vs, err := redis.Values(conn.Do("lrange", "lastlogin:"+u.Login, 0, 1))
+	if err != nil {
+		log.Fatalln(err)
+	}
+	u.LastLogin = &LastLogin{}
+	for _, v := range vs {
+		r := bytes.NewReader(v.([]byte))
+		dec := gob.NewDecoder(r)
+		dec.Decode(u.LastLogin)
+	}
+	return u.LastLogin
+
+	rows, err := DB.Query(
 		"SELECT login, ip, created_at FROM login_log WHERE succeeded = 1 AND user_id = ? ORDER BY id DESC LIMIT 2",
 		u.ID,
 	)

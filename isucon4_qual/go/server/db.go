@@ -1,7 +1,9 @@
-package main
+package server
 
 import (
+	"bytes"
 	"database/sql"
+	"encoding/gob"
 	"errors"
 	"log"
 	"net/http"
@@ -37,7 +39,7 @@ func init() {
 	pool = newPool()
 }
 
-func createLoginLog(succeeded bool, remoteAddr, login string, user *User) error {
+func CreateRedisLoginLog(succeeded bool, remoteAddr, login string) {
 	conn := pool.Get()
 	defer conn.Close()
 	if succeeded {
@@ -63,6 +65,10 @@ func createLoginLog(succeeded bool, remoteAddr, login string, user *User) error 
 			}
 		}
 	}
+}
+
+func createLoginLog(succeeded bool, remoteAddr, login string, user *User) error {
+	CreateRedisLoginLog(succeeded, remoteAddr, login)
 	succ := 0
 	if succeeded {
 		succ = 1
@@ -74,7 +80,7 @@ func createLoginLog(succeeded bool, remoteAddr, login string, user *User) error 
 		userId.Valid = true
 	}
 
-	_, err := db.Exec(
+	_, err := DB.Exec(
 		"INSERT INTO login_log (`created_at`, `user_id`, `login`, `ip`, `succeeded`) "+
 			"VALUES (?,?,?,?,?)",
 		time.Now(), userId, login, remoteAddr, succ,
@@ -84,6 +90,9 @@ func createLoginLog(succeeded bool, remoteAddr, login string, user *User) error 
 }
 
 func isLockedUser(user *User) bool {
+	if user == nil {
+		return false
+	}
 	conn := pool.Get()
 	defer conn.Close()
 	res, err := redis.Bool(conn.Do("sismember", "banned_user", user.Login))
@@ -103,6 +112,27 @@ func isBannedIP(ip string) bool {
 	return res
 }
 
+func UpdateLastLogin(ip, login string, createdAt time.Time) {
+	conn := pool.Get()
+	defer conn.Close()
+
+	lastLogin := LastLogin{
+		Login:     login,
+		IP:        ip,
+		CreatedAt: createdAt,
+	}
+	var buf bytes.Buffer
+	enc := gob.NewEncoder(&buf)
+	err := enc.Encode(lastLogin)
+	if err != nil {
+		log.Fatalln(err)
+	}
+	_, err = conn.Do("lpush", "lastlogin:"+login, buf.Bytes())
+	if err != nil {
+		log.Fatalln(err)
+	}
+}
+
 func attemptLogin(req *http.Request) (*User, error) {
 	succeeded := false
 	user := &User{}
@@ -117,9 +147,12 @@ func attemptLogin(req *http.Request) (*User, error) {
 
 	defer func() {
 		createLoginLog(succeeded, remoteAddr, loginName, user)
+		if succeeded {
+			UpdateLastLogin(remoteAddr, loginName, time.Now())
+		}
 	}()
 
-	row := db.QueryRow(
+	row := DB.QueryRow(
 		"SELECT id, login, password_hash, salt FROM users WHERE login = ?",
 		loginName,
 	)
@@ -154,7 +187,7 @@ func attemptLogin(req *http.Request) (*User, error) {
 
 func getCurrentUser(userId interface{}) *User {
 	user := &User{}
-	row := db.QueryRow(
+	row := DB.QueryRow(
 		"SELECT id, login, password_hash, salt FROM users WHERE id = ?",
 		userId,
 	)
