@@ -15,7 +15,10 @@ import (
 )
 
 var DB *sql.DB
-var hist *grizzly.KeyedHistogramMetric
+var (
+	hist      *grizzly.KeyedHistogramMetric
+	histIndex *grizzly.KeyedHistogramMetric
+)
 var (
 	UserLockThreshold int
 	IPBanThreshold    int
@@ -56,19 +59,21 @@ func Main() {
 	store := sessions.NewCookieStore([]byte("secret-isucon"))
 	m.Use(sessions.Sessions("isucon_go_session", store))
 
-	m.Use(martini.Static("../public"))
 	m.Use(render.Renderer(render.Options{
 		Layout: "layout",
 	}))
+	m.Use(martini.Static("../public"))
 
-	m.Get("/", func(r render.Render, session sessions.Session) {
+	m.Get("/", func(w http.ResponseWriter, session sessions.Session) {
 		s := grizzly.KeyedStopwatch(hist, "/")
-		r.HTML(200, "index", map[string]string{"Flash": getFlash(session, "notice")})
-		s.Close()
+		defer s.Close()
+		flash := getFlash(session, "notice")
+		NewTemplate(w).index(flash)
 	})
 
-	m.Post("/login", func(req *http.Request, r render.Render, session sessions.Session) {
+	m.Post("/login", func(req *http.Request, w http.ResponseWriter, session sessions.Session) {
 		s := grizzly.KeyedStopwatch(hist, "/login")
+		defer s.Close()
 		user, err := attemptLogin(req)
 
 		notice := ""
@@ -83,28 +88,27 @@ func Main() {
 			}
 
 			session.Set("notice", notice)
-			r.Redirect("/")
+			http.Redirect(w, req, "/", http.StatusFound)
 			return
 		}
 
 		session.Set("user_id", user.Login)
-		r.Redirect("/mypage")
-		s.Close()
+		http.Redirect(w, req, "/mypage", http.StatusFound)
 	})
 
-	m.Get("/mypage", func(r render.Render, session sessions.Session) {
+	m.Get("/mypage", func(r *http.Request, w http.ResponseWriter, session sessions.Session) {
 		s := grizzly.KeyedStopwatch(hist, "/mypage")
+		defer s.Close()
 		currentUser := getCurrentUser(session.Get("user_id"))
 
 		if currentUser == nil {
 			session.Set("notice", "You must be logged in")
-			r.Redirect("/")
+			http.Redirect(w, r, "/", http.StatusFound)
 			return
 		}
 
 		currentUser.getLastLogin()
-		r.HTML(200, "mypage", currentUser)
-		s.Close()
+		NewTemplate(w).mypage(currentUser.LastLogin)
 	})
 
 	m.Get("/report", func(r render.Render) {

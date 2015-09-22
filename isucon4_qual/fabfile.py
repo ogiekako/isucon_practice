@@ -12,21 +12,19 @@ env.roledefs = {
 
 @roles('server')
 def push():
-    local('gox -osarch="linux/amd64" -output="go/golang-webapp" -rebuild ./go')
-    local('gox -osarch="linux/amd64" -output="go/golang-prepare" -rebuild ./go/prepare')
-
     sudo('supervisorctl stop isucon_go')
-    put('go/golang-webapp', 'webapp/go/golang-webapp')
-    put('go/golang-prepare', 'webapp/go/golang-prepare')
+    local('gox -osarch="linux/amd64" -output="/tmp/golang-webapp" -rebuild ./go')
     put('go/templates/*', 'webapp/go/templates/')
-    put('go/prepare/*', 'webapp/go/prepare/')
+    put('/tmp/golang-webapp', 'webapp/go/golang-webapp')
+    run('chmod 755 webapp/go/golang-webapp')
+    sudo('supervisorctl start isucon_go')
+
+    local('gox -osarch="linux/amd64" -output="/tmp/golang-prepare" -rebuild ./go/prepare')
+    put('/tmp/golang-prepare', 'webapp/go/golang-prepare')
     put('sql/schema.sql', 'sql/schema.sql')
     put('init.sh', 'init.sh')
-
-    run('chmod 755 webapp/go/golang-webapp')
     run('chmod 755 webapp/go/golang-prepare')
     run('chmod 755 init.sh')
-    sudo('supervisorctl start isucon_go')
     bench()
 
 @roles('server')
