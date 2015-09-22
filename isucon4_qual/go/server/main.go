@@ -15,6 +15,7 @@ import (
 )
 
 var DB *sql.DB
+var hist *grizzly.KeyedHistogramMetric
 var (
 	UserLockThreshold int
 	IPBanThreshold    int
@@ -49,7 +50,7 @@ func init() {
 }
 
 func Main() {
-	h := grizzly.KeyedHistogram("http/")
+	hist = grizzly.KeyedHistogram("http/")
 
 	m := martini.Classic()
 	store := sessions.NewCookieStore([]byte("secret-isucon"))
@@ -61,13 +62,13 @@ func Main() {
 	}))
 
 	m.Get("/", func(r render.Render, session sessions.Session) {
-		s := grizzly.KeyedStopwatch(h, "/")
+		s := grizzly.KeyedStopwatch(hist, "/")
 		r.HTML(200, "index", map[string]string{"Flash": getFlash(session, "notice")})
 		s.Close()
 	})
 
 	m.Post("/login", func(req *http.Request, r render.Render, session sessions.Session) {
-		s := grizzly.KeyedStopwatch(h, "/login")
+		s := grizzly.KeyedStopwatch(hist, "/login")
 		user, err := attemptLogin(req)
 
 		notice := ""
@@ -86,13 +87,13 @@ func Main() {
 			return
 		}
 
-		session.Set("user_id", strconv.Itoa(user.ID))
+		session.Set("user_id", user.Login)
 		r.Redirect("/mypage")
 		s.Close()
 	})
 
 	m.Get("/mypage", func(r render.Render, session sessions.Session) {
-		s := grizzly.KeyedStopwatch(h, "/mypage")
+		s := grizzly.KeyedStopwatch(hist, "/mypage")
 		currentUser := getCurrentUser(session.Get("user_id"))
 
 		if currentUser == nil {
@@ -107,7 +108,7 @@ func Main() {
 	})
 
 	m.Get("/report", func(r render.Render) {
-		s := grizzly.KeyedStopwatch(h, "/report")
+		s := grizzly.KeyedStopwatch(hist, "/report")
 		ips := bannedIPs()
 		users := lockedUsers()
 		r.JSON(200, map[string][]string{
