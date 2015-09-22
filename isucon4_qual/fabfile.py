@@ -2,7 +2,7 @@
 from __future__ import division, absolute_import, print_function, unicode_literals
 from fabric.api import *
 
-workload = 5
+workload = 6
 
 env.user = 'isucon'
 env.key_filename = '~/.ssh/google_compute_engine'
@@ -19,11 +19,8 @@ def push():
     run('chmod 755 webapp/go/golang-webapp')
     sudo('supervisorctl start isucon_go')
 
-    local('gox -osarch="linux/amd64" -output="/tmp/golang-prepare" -rebuild ./go/prepare')
-    put('/tmp/golang-prepare', 'webapp/go/golang-prepare')
     put('sql/schema.sql', 'sql/schema.sql')
     put('init.sh', 'init.sh')
-    run('chmod 755 webapp/go/golang-prepare')
     run('chmod 755 init.sh')
     bench()
 
