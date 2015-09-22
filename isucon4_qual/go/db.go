@@ -16,18 +16,30 @@ var (
 	ErrUserNotFound  = errors.New("Not found user")
 	ErrWrongPassword = errors.New("Wrong password")
 
-	conn redis.Conn
+	pool *redis.Pool
 )
 
-func init() {
-	var err error
-	conn, err = redis.Dial("tcp", ":6379")
-	if err != nil {
-		panic(err)
+func newPool() *redis.Pool {
+	return &redis.Pool{
+		MaxIdle:     8,
+		IdleTimeout: 240 * time.Second,
+		Dial: func() (redis.Conn, error) {
+			return redis.Dial("tcp", ":6379")
+		},
+		TestOnBorrow: func(c redis.Conn, t time.Time) error {
+			_, err := c.Do("ping")
+			return err
+		},
 	}
 }
 
+func init() {
+	pool = newPool()
+}
+
 func createLoginLog(succeeded bool, remoteAddr, login string, user *User) error {
+	conn := pool.Get()
+	defer conn.Close()
 	if succeeded {
 		if remoteAddr != "" {
 			conn.Do("hdel", "ip", remoteAddr)
@@ -72,6 +84,8 @@ func createLoginLog(succeeded bool, remoteAddr, login string, user *User) error 
 }
 
 func isLockedUser(user *User) bool {
+	conn := pool.Get()
+	defer conn.Close()
 	res, err := redis.Bool(conn.Do("sismember", "banned_user", user.Login))
 	if err != nil {
 		log.Fatalln(err)
@@ -80,6 +94,8 @@ func isLockedUser(user *User) bool {
 }
 
 func isBannedIP(ip string) bool {
+	conn := pool.Get()
+	defer conn.Close()
 	res, err := redis.Bool(conn.Do("sismember", "banned_ip", ip))
 	if err != nil {
 		log.Fatalln(err)
@@ -152,6 +168,8 @@ func getCurrentUser(userId interface{}) *User {
 }
 
 func bannedIPs() []string {
+	conn := pool.Get()
+	defer conn.Close()
 	ips, err := redis.Strings(conn.Do("smembers", "banned_ip"))
 	if err != nil {
 		log.Fatalln(err)
@@ -160,6 +178,8 @@ func bannedIPs() []string {
 }
 
 func lockedUsers() []string {
+	conn := pool.Get()
+	defer conn.Close()
 	users, err := redis.Strings(conn.Do("smembers", "banned_user"))
 	if err != nil {
 		log.Fatalln(err)

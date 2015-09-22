@@ -2,7 +2,7 @@
 from __future__ import division, absolute_import, print_function, unicode_literals
 from fabric.api import *
 
-workload = 1
+workload = 3
 
 env.user = 'isucon'
 env.key_filename = '~/.ssh/google_compute_engine'
