@@ -12,6 +12,7 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"time"
 )
 
 var DB *sql.DB
@@ -71,6 +72,11 @@ func Main() {
 		NewTemplate(w).index(flash)
 	})
 
+	m.Get("/init", func(w http.ResponseWriter) {
+		prepare()
+		fmt.Fprintf(w, "done\n")
+	})
+
 	m.Post("/login", func(req *http.Request, w http.ResponseWriter, session sessions.Session) {
 		s := grizzly.KeyedStopwatch(hist, "/login")
 		defer s.Close()
@@ -99,7 +105,7 @@ func Main() {
 	m.Get("/mypage", func(r *http.Request, w http.ResponseWriter, session sessions.Session) {
 		s := grizzly.KeyedStopwatch(hist, "/mypage")
 		defer s.Close()
-		currentUser := getCurrentUser(session.Get("user_id"))
+		currentUser := getUser(session.Get("user_id").(string))
 
 		if currentUser == nil {
 			session.Set("notice", "You must be logged in")
@@ -107,8 +113,7 @@ func Main() {
 			return
 		}
 
-		currentUser.getLastLogin()
-		NewTemplate(w).mypage(currentUser.LastLogin)
+		NewTemplate(w).mypage(getLastLogin(currentUser.Login))
 	})
 
 	m.Get("/report", func(r render.Render) {
@@ -125,4 +130,41 @@ func Main() {
 	http.Handle("/", m)
 
 	log.Fatal(http.ListenAndServe(":8080", nil))
+}
+
+func prepare() {
+	initDB()
+	rows, err := DB.Query("select ip, login, succeeded, created_at from login_log order by id")
+	if err != nil {
+		log.Fatalln(err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var remoteAddr, login string
+		var succeeded bool
+		var createdAt time.Time
+		err = rows.Scan(&remoteAddr, &login, &succeeded, &createdAt)
+		if err != nil {
+			log.Fatalln(err)
+		}
+
+		CreateLoginLog(succeeded, remoteAddr, login)
+		if succeeded {
+			UpdateLastLogin(remoteAddr, login, createdAt)
+		}
+	}
+	rows2, err := DB.Query("select login, password_hash, salt from users")
+	if err != nil {
+		log.Fatalln(err)
+	}
+	defer rows2.Close()
+	for rows2.Next() {
+		var user User
+		err := rows2.Scan(&user.Login, &user.PasswordHash, &user.Salt)
+		if err != nil {
+			log.Fatalln(err)
+		}
+		AddUser(&user)
+	}
+
 }
