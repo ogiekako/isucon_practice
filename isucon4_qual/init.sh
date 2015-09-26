@@ -13,4 +13,4 @@ mysql -h ${myhost} -P ${myport} -u ${myuser} ${mydb} < sql/dummy_users.sql
 mysql -h ${myhost} -P ${myport} -u ${myuser} ${mydb} < sql/dummy_log.sql
 
 # ./webapp/go/golang-prepare
-wget localhost:8080/init -O /dev/null
+wget localhost:80/init -O /dev/null
