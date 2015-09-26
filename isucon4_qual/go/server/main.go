@@ -2,22 +2,20 @@ package server
 
 import (
 	"database/sql"
-	_ "encoding/json"
+	"encoding/json"
 	"fmt"
 	"github.com/draftcode/isucon_misc/grizzly"
-	"github.com/go-martini/martini"
 	_ "github.com/go-sql-driver/mysql"
-	"github.com/martini-contrib/render"
-	"github.com/martini-contrib/sessions"
+	ss "github.com/martini-contrib/sessions"
 	"log"
 	"net/http"
+	"runtime"
 	"strconv"
 	"time"
 )
 
 var DB *sql.DB
 var (
-	hist      *grizzly.KeyedHistogramMetric
 	histIndex *grizzly.KeyedHistogramMetric
 )
 var (
@@ -26,6 +24,8 @@ var (
 )
 
 func init() {
+	runtime.GOMAXPROCS(runtime.NumCPU())
+
 	dsn := fmt.Sprintf(
 		"%s:%s@tcp(%s:%s)/%s?parseTime=true&loc=Local",
 		getEnv("ISU4_DB_USER", "root"),
@@ -54,33 +54,31 @@ func init() {
 }
 
 func Main() {
-	hist = grizzly.KeyedHistogram("http/")
 
-	m := martini.Classic()
-	store := sessions.NewCookieStore([]byte("secret-isucon"))
-	m.Use(sessions.Sessions("isucon_go_session", store))
+	store := ss.NewCookieStore([]byte("secret-isucon"))
 
-	m.Use(render.Renderer(render.Options{
-		Layout: "layout",
-	}))
-	m.Use(martini.Static("../public"))
+	m := http.NewServeMux()
+	addResourceHandlers(m)
 
-	m.Get("/", func(w http.ResponseWriter, session sessions.Session) {
-		s := grizzly.KeyedStopwatch(hist, "/")
-		defer s.Close()
-		flash := getFlash(session, "notice")
-		NewTemplate(w).index(flash)
+	m.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		session, err := store.Get(r, "isucon")
+		if err != nil {
+			log.Fatalln(err)
+		}
+		notice := ""
+		if flash, ok := session.Values["notice"]; ok {
+			notice = flash.(string)
+		}
+		NewTemplate(w).index(notice)
 	})
 
-	m.Get("/init", func(w http.ResponseWriter) {
+	m.HandleFunc("/init", func(w http.ResponseWriter, r *http.Request) {
 		prepare()
 		fmt.Fprintf(w, "done\n")
 	})
 
-	m.Post("/login", func(req *http.Request, w http.ResponseWriter, session sessions.Session) {
-		s := grizzly.KeyedStopwatch(hist, "/login")
-		defer s.Close()
-		user, err := attemptLogin(req)
+	m.HandleFunc("/login", func(w http.ResponseWriter, r *http.Request) {
+		user, err := attemptLogin(r)
 
 		notice := ""
 		if err != nil || user == nil {
@@ -93,41 +91,60 @@ func Main() {
 				notice = "Wrong username or password"
 			}
 
-			session.Set("notice", notice)
-			http.Redirect(w, req, "/", http.StatusFound)
-			return
-		}
-
-		session.Set("user_id", user.Login)
-		http.Redirect(w, req, "/mypage", http.StatusFound)
-	})
-
-	m.Get("/mypage", func(r *http.Request, w http.ResponseWriter, session sessions.Session) {
-		s := grizzly.KeyedStopwatch(hist, "/mypage")
-		defer s.Close()
-		currentUser := getUser(session.Get("user_id").(string))
-
-		if currentUser == nil {
-			session.Set("notice", "You must be logged in")
+			session, err := store.Get(r, "isucon")
+			if err != nil {
+				log.Fatalln(err)
+			}
+			session.Values["notice"] = notice
+			store.Save(r, w, session)
 			http.Redirect(w, r, "/", http.StatusFound)
 			return
 		}
 
+		session, err := store.Get(r, "isucon")
+		if err != nil {
+			log.Fatalln(err)
+		}
+		session.Values["user_id"] = user.Login
+		store.Save(r, w, session)
+		http.Redirect(w, r, "/mypage", http.StatusFound)
+	})
+
+	m.HandleFunc("/mypage", func(w http.ResponseWriter, r *http.Request) {
+		session, err := store.Get(r, "isucon")
+		if err != nil {
+			log.Fatalln(err)
+		}
+		var login string
+		if v, ok := session.Values["user_id"]; ok {
+			login = v.(string)
+		}
+		currentUser := getUser(login)
+
+		if currentUser == nil {
+			session.Values["notice"] = "You must be logged in"
+			store.Save(r, w, session)
+			http.Redirect(w, r, "/", http.StatusFound)
+			return
+		}
+
+		store.Save(r, w, session)
 		NewTemplate(w).mypage(getLastLogin(currentUser.Login))
 	})
 
-	m.Get("/report", func(r render.Render) {
-		s := grizzly.KeyedStopwatch(hist, "/report")
-		ips := bannedIPs()
-		users := lockedUsers()
-		r.JSON(200, map[string][]string{
-			"banned_ips":   ips,
-			"locked_users": users,
+	m.HandleFunc("/report", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		bs, err := json.Marshal(map[string][]string{
+			"banned_ips":   bannedIPs(),
+			"locked_users": lockedUsers(),
 		})
-		s.Close()
+		if err != nil {
+			log.Fatalln(err)
+		}
+		w.Write(bs)
 	})
 
-	http.Handle("/", m)
+	http.Handle("/", grizzly.WrappedServeMux(m, grizzly.KeyedHistogram("http/")))
 
 	log.Fatal(http.ListenAndServe(":80", nil))
 }
