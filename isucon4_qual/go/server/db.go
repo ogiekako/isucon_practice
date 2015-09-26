@@ -2,12 +2,15 @@ package server
 
 import (
 	"errors"
+	"hash/fnv"
 	"net/http"
 	"sync"
 	"time"
 
 	"github.com/draftcode/isucon_misc/grizzly"
 )
+
+const mSize = 128
 
 var (
 	ErrBannedIP      = errors.New("Banned IP")
@@ -20,8 +23,8 @@ var (
 
 	user  map[string]int
 	ip    map[string]int
-	userM = sync.Mutex{}
-	ipM   = sync.Mutex{}
+	userM = [mSize]sync.Mutex{}
+	ipM   = [mSize]sync.Mutex{}
 
 	lastLogin   map[string]*LastLogin
 	secondLogin map[string]*LastLogin
@@ -41,28 +44,38 @@ func initDB() {
 	secondLogin = make(map[string]*LastLogin)
 }
 
+func shard(s string) int {
+	h := fnv.New32a()
+	h.Write([]byte(s))
+	return int(h.Sum32() % mSize)
+}
+
 func CreateLoginLog(succeeded bool, remoteAddr, login string) {
 	if succeeded {
 		if remoteAddr != "" {
-			ipM.Lock()
+			i := shard(remoteAddr)
+			ipM[i].Lock()
 			ip[remoteAddr] = 0
-			ipM.Unlock()
+			ipM[i].Unlock()
 		}
 		if login != "" {
-			userM.Lock()
+			i := shard(login)
+			userM[i].Lock()
 			user[login] = 0
-			userM.Unlock()
+			userM[i].Unlock()
 		}
 	} else {
 		if remoteAddr != "" {
-			ipM.Lock()
+			i := shard(remoteAddr)
+			ipM[i].Lock()
 			ip[remoteAddr]++
-			ipM.Unlock()
+			ipM[i].Unlock()
 		}
 		if login != "" {
-			userM.Lock()
+			i := shard(login)
+			userM[i].Lock()
 			user[login]++
-			userM.Unlock()
+			userM[i].Unlock()
 		}
 	}
 }
@@ -118,11 +131,11 @@ func attemptLogin(req *http.Request) (*User, error) {
 
 	defer func() {
 		s := grizzly.KeyedStopwatch(hDB, "/login:createLog")
-		defer s.Close()
 		CreateLoginLog(succeeded, remoteAddr, loginName)
 		if succeeded {
 			UpdateLastLogin(remoteAddr, loginName, time.Now())
 		}
+		s.Close()
 	}()
 
 	s := grizzly.KeyedStopwatch(hDB, "/login:update")
