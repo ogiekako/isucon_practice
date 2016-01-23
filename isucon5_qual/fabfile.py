@@ -25,5 +25,4 @@ def push():
 
 @roles('server')
 def bench():
-    with cd('bench'):
-        run('jq \'.[0]\' < ../webapp/script/testsets/testsets.json | gradle run -Pargs="net.isucon.isucon5q.bench.scenario.Isucon5Qualification localhost:8080"')
+    run('bench/bench.sh')
