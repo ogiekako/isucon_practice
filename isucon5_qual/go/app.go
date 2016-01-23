@@ -674,7 +674,8 @@ func GetFriends(w http.ResponseWriter, r *http.Request) {
 	if err != sql.ErrNoRows {
 		checkErr(err)
 	}
-	friendsMap := make(map[int]time.Time)
+    friendSet := make(map[int]bool)
+    var friends []Friend
 	for rows.Next() {
 		var id, one, another int
 		var createdAt time.Time
@@ -685,15 +686,12 @@ func GetFriends(w http.ResponseWriter, r *http.Request) {
 		} else {
 			friendID = one
 		}
-		if _, ok := friendsMap[friendID]; !ok {
-			friendsMap[friendID] = createdAt
+		if _, ok := friendSet[friendID]; !ok {
+            friendSet[friendID] = true
+            friends = append(friends, Friend{friendID, createdAt})
 		}
 	}
 	rows.Close()
-	friends := make([]Friend, 0, len(friendsMap))
-	for key, val := range friendsMap {
-		friends = append(friends, Friend{key, val})
-	}
 	render(w, r, http.StatusOK, "friends.html", struct{ Friends []Friend }{friends})
 }
 

@@ -12,14 +12,14 @@ env.roledefs = {
 
 @roles('server')
 def push():
-    sudo('systemctl stop isuxi.go.server')
+    sudo('systemctl stop isuxi.go')
     local('go build -o /tmp/app ./go')
     put('go/templates/*', 'webapp/go/templates/')
     put('sql/*', 'webapp/sql/')
     put('static/*', 'webapp/static/')
     put('/tmp/app', 'webapp/go/app')
     run('chmod 755 webapp/go/app')
-    sudo('systemctl start isuxi.go.server')
+    sudo('systemctl start isuxi.go')
 
     bench()
 
