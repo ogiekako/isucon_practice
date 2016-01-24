@@ -3,6 +3,7 @@ package main
 import (
 	"database/sql"
 	"errors"
+	"github.com/draftcode/isucon_practice/misc/grizzly"
 	"github.com/go-sql-driver/mysql"
 	"github.com/gorilla/context"
 	"github.com/gorilla/mux"
@@ -21,6 +22,8 @@ import (
 var (
 	db    *sql.DB
 	store *sessions.CookieStore
+
+	handlerMetric = grizzly.KeyedHistogram("handler")
 )
 
 type User struct {
@@ -186,7 +189,7 @@ func markFootprint(w http.ResponseWriter, r *http.Request, id int) {
 	}
 }
 
-func myHandler(fn func(http.ResponseWriter, *http.Request)) http.HandlerFunc {
+func myHandler(fn func(http.ResponseWriter, *http.Request), name string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		defer func() {
 			rcv := recover()
@@ -217,6 +220,7 @@ func myHandler(fn func(http.ResponseWriter, *http.Request)) http.HandlerFunc {
 				}
 			}
 		}()
+		defer grizzly.KeyedStopwatch(handlerMetric, name).Close()
 		fn(w, r)
 	}
 }
@@ -674,8 +678,8 @@ func GetFriends(w http.ResponseWriter, r *http.Request) {
 	if err != sql.ErrNoRows {
 		checkErr(err)
 	}
-    friendSet := make(map[int]bool)
-    var friends []Friend
+	friendSet := make(map[int]bool)
+	var friends []Friend
 	for rows.Next() {
 		var id, one, another int
 		var createdAt time.Time
@@ -687,8 +691,8 @@ func GetFriends(w http.ResponseWriter, r *http.Request) {
 			friendID = one
 		}
 		if _, ok := friendSet[friendID]; !ok {
-            friendSet[friendID] = true
-            friends = append(friends, Friend{friendID, createdAt})
+			friendSet[friendID] = true
+			friends = append(friends, Friend{friendID, createdAt})
 		}
 	}
 	rows.Close()
@@ -755,30 +759,32 @@ func main() {
 	r := mux.NewRouter()
 
 	l := r.Path("/login").Subrouter()
-	l.Methods("GET").HandlerFunc(myHandler(GetLogin))
-	l.Methods("POST").HandlerFunc(myHandler(PostLogin))
-	r.Path("/logout").Methods("GET").HandlerFunc(myHandler(GetLogout))
+	l.Methods("GET").HandlerFunc(myHandler(GetLogin, "GetLogin"))
+	l.Methods("POST").HandlerFunc(myHandler(PostLogin, "PostLogin"))
+	r.Path("/logout").Methods("GET").HandlerFunc(myHandler(GetLogout, "GetLogout"))
 
 	p := r.Path("/profile/{account_name}").Subrouter()
-	p.Methods("GET").HandlerFunc(myHandler(GetProfile))
-	p.Methods("POST").HandlerFunc(myHandler(PostProfile))
+	p.Methods("GET").HandlerFunc(myHandler(GetProfile, "GetProfile"))
+	p.Methods("POST").HandlerFunc(myHandler(PostProfile, "PostProfile"))
 
 	d := r.PathPrefix("/diary").Subrouter()
-	d.HandleFunc("/entries/{account_name}", myHandler(ListEntries)).Methods("GET")
-	d.HandleFunc("/entry", myHandler(PostEntry)).Methods("POST")
-	d.HandleFunc("/entry/{entry_id}", myHandler(GetEntry)).Methods("GET")
+	d.HandleFunc("/entries/{account_name}", myHandler(ListEntries, "ListEntries")).Methods("GET")
+	d.HandleFunc("/entry", myHandler(PostEntry, "PostEntry")).Methods("POST")
+	d.HandleFunc("/entry/{entry_id}", myHandler(GetEntry, "GetEntry")).Methods("GET")
 
-	d.HandleFunc("/comment/{entry_id}", myHandler(PostComment)).Methods("POST")
+	d.HandleFunc("/comment/{entry_id}", myHandler(PostComment, "PostComment")).Methods("POST")
 
-	r.HandleFunc("/footprints", myHandler(GetFootprints)).Methods("GET")
+	r.HandleFunc("/footprints", myHandler(GetFootprints, "GetFootprints")).Methods("GET")
 
-	r.HandleFunc("/friends", myHandler(GetFriends)).Methods("GET")
-	r.HandleFunc("/friends/{account_name}", myHandler(PostFriends)).Methods("POST")
+	r.HandleFunc("/friends", myHandler(GetFriends, "GetFriends")).Methods("GET")
+	r.HandleFunc("/friends/{account_name}", myHandler(PostFriends, "PostFriends")).Methods("POST")
 
-	r.HandleFunc("/initialize", myHandler(GetInitialize))
-	r.HandleFunc("/", myHandler(GetIndex))
+	r.HandleFunc("/initialize", myHandler(GetInitialize, "GetInitialize"))
+	r.HandleFunc("/", myHandler(GetIndex, "GetIndex"))
 	r.PathPrefix("/").Handler(http.FileServer(http.Dir("../static")))
-	log.Fatal(http.ListenAndServe(":8080", r))
+
+	http.Handle("/", r)
+	log.Fatal(http.ListenAndServe(":8080", nil))
 }
 
 func checkErr(err error) {
