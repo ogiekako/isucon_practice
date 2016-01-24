@@ -1,0 +1,96 @@
+mysql> use isucon5q
+mysql> show tables;
++--------------------+
+| Tables_in_isucon5q |
++--------------------+
+| comments           |
+| entries            |
+| footprints         |
+| profiles           |
+| relations          |
+| salts              |
+| users              |
++--------------------+
+7 rows in set (0.00 sec)
+
+mysql> desc comments;
++------------+-----------+------+-----+-------------------+----------------+
+| Field      | Type      | Null | Key | Default           | Extra          |
++------------+-----------+------+-----+-------------------+----------------+
+| id         | int(11)   | NO   | PRI | NULL              | auto_increment |
+| entry_id   | int(11)   | NO   | MUL | NULL              |                |
+| user_id    | int(11)   | NO   |     | NULL              |                |
+| comment    | text      | YES  |     | NULL              |                |
+| created_at | timestamp | NO   | MUL | CURRENT_TIMESTAMP |                |
++------------+-----------+------+-----+-------------------+----------------+
+5 rows in set (0.00 sec)
+
+mysql> desc entries;
++------------+------------+------+-----+-------------------+----------------+
+| Field      | Type       | Null | Key | Default           | Extra          |
++------------+------------+------+-----+-------------------+----------------+
+| id         | int(11)    | NO   | PRI | NULL              | auto_increment |
+| user_id    | int(11)    | NO   | MUL | NULL              |                |
+| private    | tinyint(4) | NO   |     | NULL              |                |
+| body       | text       | YES  |     | NULL              |                |
+| created_at | timestamp  | NO   | MUL | CURRENT_TIMESTAMP |                |
++------------+------------+------+-----+-------------------+----------------+
+5 rows in set (0.00 sec)
+
+mysql> desc footprints;
++------------+-----------+------+-----+-------------------+----------------+
+| Field      | Type      | Null | Key | Default           | Extra          |
++------------+-----------+------+-----+-------------------+----------------+
+| id         | int(11)   | NO   | PRI | NULL              | auto_increment |
+| user_id    | int(11)   | NO   |     | NULL              |                |
+| owner_id   | int(11)   | NO   |     | NULL              |                |
+| created_at | timestamp | NO   |     | CURRENT_TIMESTAMP |                |
++------------+-----------+------+-----+-------------------+----------------+
+4 rows in set (0.01 sec)
+
+mysql> desc profiles;
++------------+-------------+------+-----+-------------------+-------+
+| Field      | Type        | Null | Key | Default           | Extra |
++------------+-------------+------+-----+-------------------+-------+
+| user_id    | int(11)     | NO   | PRI | NULL              |       |
+| first_name | varchar(64) | NO   |     | NULL              |       |
+| last_name  | varchar(64) | NO   |     | NULL              |       |
+| sex        | varchar(4)  | NO   |     | NULL              |       |
+| birthday   | date        | NO   |     | NULL              |       |
+| pref       | varchar(4)  | NO   |     | NULL              |       |
+| updated_at | timestamp   | NO   |     | CURRENT_TIMESTAMP |       |
++------------+-------------+------+-----+-------------------+-------+
+7 rows in set (0.00 sec)
+
+mysql> desc relations;
++------------+-----------+------+-----+-------------------+----------------+
+| Field      | Type      | Null | Key | Default           | Extra          |
++------------+-----------+------+-----+-------------------+----------------+
+| id         | int(11)   | NO   | PRI | NULL              | auto_increment |
+| one        | int(11)   | NO   | MUL | NULL              |                |
+| another    | int(11)   | NO   |     | NULL              |                |
+| created_at | timestamp | NO   |     | CURRENT_TIMESTAMP |                |
++------------+-----------+------+-----+-------------------+----------------+
+4 rows in set (0.00 sec)
+
+mysql> desc salts;
++---------+------------+------+-----+---------+-------+
+| Field   | Type       | Null | Key | Default | Extra |
++---------+------------+------+-----+---------+-------+
+| user_id | int(11)    | NO   | PRI | NULL    |       |
+| salt    | varchar(6) | YES  |     | NULL    |       |
++---------+------------+------+-----+---------+-------+
+2 rows in set (0.00 sec)
+
+mysql> desc users;
++--------------+--------------+------+-----+---------+----------------+
+| Field        | Type         | Null | Key | Default | Extra          |
++--------------+--------------+------+-----+---------+----------------+
+| id           | int(11)      | NO   | PRI | NULL    | auto_increment |
+| account_name | varchar(64)  | NO   | UNI | NULL    |                |
+| nick_name    | varchar(32)  | NO   |     | NULL    |                |
+| email        | varchar(255) | NO   | UNI | NULL    |                |
+| passhash     | varchar(128) | NO   |     | NULL    |                |
++--------------+--------------+------+-----+---------+----------------+
+5 rows in set (0.00 sec)
+
