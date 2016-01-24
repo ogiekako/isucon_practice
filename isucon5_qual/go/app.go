@@ -23,7 +23,8 @@ var (
 	db    *sql.DB
 	store *sessions.CookieStore
 
-	handlerMetric = grizzly.KeyedHistogram("handler")
+	handlerMetric  = grizzly.KeyedHistogram("handler")
+	getIndexMetric = grizzly.KeyedHistogram("GetIndex")
 )
 
 type User struct {
@@ -295,19 +296,27 @@ func GetLogout(w http.ResponseWriter, r *http.Request) {
 }
 
 func GetIndex(w http.ResponseWriter, r *http.Request) {
+	sw := grizzly.KeyedStopwatch(getIndexMetric, "auth")
 	if !authenticated(w, r) {
+		sw.Close()
 		return
 	}
+	sw.Close()
 
+	sw = grizzly.KeyedStopwatch(getIndexMetric, "getCurrentUser")
 	user := getCurrentUser(w, r)
+	sw.Close()
 
+	sw = grizzly.KeyedStopwatch(getIndexMetric, "profiles")
 	prof := Profile{}
 	row := db.QueryRow(`SELECT * FROM profiles WHERE user_id = ?`, user.ID)
 	err := row.Scan(&prof.UserID, &prof.FirstName, &prof.LastName, &prof.Sex, &prof.Birthday, &prof.Pref, &prof.UpdatedAt)
 	if err != sql.ErrNoRows {
 		checkErr(err)
 	}
+	sw.Close()
 
+	sw = grizzly.KeyedStopwatch(getIndexMetric, "entries")
 	rows, err := db.Query(`SELECT * FROM entries WHERE user_id = ? ORDER BY created_at LIMIT 5`, user.ID)
 	if err != sql.ErrNoRows {
 		checkErr(err)
@@ -321,7 +330,9 @@ func GetIndex(w http.ResponseWriter, r *http.Request) {
 		entries = append(entries, Entry{id, userID, private == 1, strings.SplitN(body, "\n", 2)[0], strings.SplitN(body, "\n", 2)[1], createdAt})
 	}
 	rows.Close()
+	sw.Close()
 
+	sw = grizzly.KeyedStopwatch(getIndexMetric, "comments")
 	rows, err = db.Query(`SELECT c.id AS id, c.entry_id AS entry_id, c.user_id AS user_id, c.comment AS comment, c.created_at AS created_at
 FROM comments c
 JOIN entries e ON c.entry_id = e.id
@@ -338,7 +349,9 @@ LIMIT 10`, user.ID)
 		commentsForMe = append(commentsForMe, c)
 	}
 	rows.Close()
+	sw.Close()
 
+	sw = grizzly.KeyedStopwatch(getIndexMetric, "entriesOfFriends")
 	rows, err = db.Query(`SELECT * FROM entries ORDER BY created_at DESC LIMIT 1000`)
 	if err != sql.ErrNoRows {
 		checkErr(err)
@@ -358,7 +371,9 @@ LIMIT 10`, user.ID)
 		}
 	}
 	rows.Close()
+	sw.Close()
 
+	sw = grizzly.KeyedStopwatch(getIndexMetric, "commentsOfFriends")
 	rows, err = db.Query(`SELECT * FROM comments ORDER BY created_at DESC LIMIT 1000`)
 	if err != sql.ErrNoRows {
 		checkErr(err)
@@ -387,7 +402,9 @@ LIMIT 10`, user.ID)
 		}
 	}
 	rows.Close()
+	sw.Close()
 
+	sw = grizzly.KeyedStopwatch(getIndexMetric, "friendsMap")
 	rows, err = db.Query(`SELECT * FROM relations WHERE one = ? OR another = ? ORDER BY created_at DESC`, user.ID, user.ID)
 	if err != sql.ErrNoRows {
 		checkErr(err)
@@ -412,7 +429,9 @@ LIMIT 10`, user.ID)
 		friends = append(friends, Friend{key, val})
 	}
 	rows.Close()
+	sw.Close()
 
+	sw = grizzly.KeyedStopwatch(getIndexMetric, "footprints")
 	rows, err = db.Query(`SELECT user_id, owner_id, DATE(created_at) AS date, MAX(created_at) AS updated
 FROM footprints
 WHERE user_id = ?
@@ -429,7 +448,9 @@ LIMIT 10`, user.ID)
 		footprints = append(footprints, fp)
 	}
 	rows.Close()
+	sw.Close()
 
+	sw = grizzly.KeyedStopwatch(getIndexMetric, "render")
 	render(w, r, http.StatusOK, "index.html", struct {
 		User              User
 		Profile           Profile
@@ -442,6 +463,7 @@ LIMIT 10`, user.ID)
 	}{
 		*user, prof, entries, commentsForMe, entriesOfFriends, commentsOfFriends, friends, footprints,
 	})
+	sw.Close()
 }
 
 func GetProfile(w http.ResponseWriter, r *http.Request) {
