@@ -7,7 +7,7 @@ workload = 6
 env.user = 'isucon'
 env.key_filename = '~/.ssh/id_rsa'
 env.roledefs = {
-    'server': ['104.155.216.150'],
+    'server': ['104.155.204.133'],
 }
 
 @roles('server')
